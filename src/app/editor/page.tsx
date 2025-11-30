@@ -42,7 +42,7 @@ const getCategoryByColor = (name: string) => {
 // 这样它就不会每次渲染都变了，ESLint 就开心了
 const MODELS = [
   { name: '生角(标准)', path: '/source/models/mask.glb' },
-  { name: '方块', path: '/source/models/square' }, 
+  { name: '方块', path: '/source/models/square.glb' }, 
 ];
 
 function EditorContent() {
