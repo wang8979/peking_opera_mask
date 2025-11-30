@@ -1,0 +1,34 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// === 表1：用户创作 (User Works) ===
+model Work {
+  id          String   @id @default(cuid())
+  title       String?
+  imageUrl    String
+  category    String   @default("京剧")
+  description String?
+  userId      String?  // 用户ID
+  createdAt   DateTime @default(now())
+}
+
+// === 表2：官方展品 (Museum Exhibits) ===
+// 结构和 Work 很像，但完全独立
+model Exhibit {
+  id          String   @id @default(cuid())
+  title       String
+  imageUrl    String
+  category    String
+  description String?
+  createdAt   DateTime @default(now())
+  // 这里不需要 userId，因为都是官方的
+}
