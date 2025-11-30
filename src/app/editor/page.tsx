@@ -264,3 +264,4 @@ export default function EditorPage() {
     </div>
   );
 }
+export const dynamic = 'force-dynamic';
