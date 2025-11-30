@@ -1,27 +1,51 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import Scene from '@/components/canvas/Scene';
 import { Mask } from '@/components/canvas/Mask';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
 export const OPERA_COLORS = { 
-  cinnabar: '#ff461f', ink: '#161823', clamWhite: '#f0f0f4', rattanYellow: '#f2de76', 
-  indigo: '#1661ab', stoneGreen: '#1a6840', blackPurple: '#4a1e2f', mudGold: '#bfae58',  
-  rouge: '#9d2933', ochre: '#845a33', crowCyan: '#424c50', crabCyan: '#8fab86', 
-  paleSilk: '#e0c891', lotusPurple: '#a8849e', 
+  cinnabar: '#ff461f', 
+  ink: '#161823',      
+  clamWhite: '#f0f0f4',
+  rattanYellow: '#f2de76', 
+  indigo: '#1661ab',   
+  stoneGreen: '#1a6840', 
+  blackPurple: '#4a1e2f', 
+  mudGold: '#bfae58',  
+  rouge: '#9d2933',    
+  ochre: '#845a33',    
+  crowCyan: '#424c50', 
+  crabCyan: '#8fab86', 
+  paleSilk: '#e0c891', 
+  lotusPurple: '#a8849e', 
 };
 
 const getColorOptions = () => {
   return Object.entries(OPERA_COLORS).map(([name, color]) => ({
     name: name,
     value: color,
-    category: ['cinnabar','ink','clamWhite','rattanYellow','indigo','stoneGreen','blackPurple','mudGold'].includes(name) ? 'main' : 'secondary'
+    category: getCategoryByColor(name)
   }));
 };
 
-export default function EditorPage() {
+const getCategoryByColor = (name: string) => {
+  if (['cinnabar', 'ink', 'clamWhite', 'rattanYellow', 'indigo', 'stoneGreen', 'blackPurple', 'mudGold'].includes(name)) {
+    return 'main';
+  }
+  return 'secondary';
+};
+
+// [修复] 把 MODELS 移到组件外面，变成静态常量
+// 这样它就不会每次渲染都变了，ESLint 就开心了
+const MODELS = [
+  { name: '生角(标准)', path: '/source/models/mask.glb' },
+  { name: '方块', path: '/source/models/square' }, 
+];
+
+function EditorContent() {
   const [color, setColor] = useState(OPERA_COLORS.cinnabar);
   const [selectedCategory, setSelectedCategory] = useState('main');
   const [isPainting, setIsPainting] = useState(false);
@@ -33,48 +57,62 @@ export default function EditorPage() {
   const [saveTrigger, setSaveTrigger] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
 
-  // [新增] 导出 & 重置触发器
   const [exportTrigger, setExportTrigger] = useState(0);
-  const [resetTrigger, setResetTrigger] = useState(0);
-
-  // [新增] 模型列表 (确保这些 glb 文件在 public/source/models/ 下存在！)
-  const MODELS = [
-    { name: '生角(标准)', path: '/source/models/mask.glb' },
-    { name: '方块', path: '/source/models/square.glb' },
-
-    // 如果你还没有第二个模型，可以先注释掉，或者复制一份 mask.glb 改名测试
-    // { name: '旦角(示例)', path: '/source/models/mask_female.glb' }, 
-  ];
+  
   const [currentModel, setCurrentModel] = useState(MODELS[0].path);
 
-  // ... (用户 ID、参考图、拖拽逻辑保持不变) ...
   const [userId, setUserId] = useState('');
+
   const searchParams = useSearchParams();
   const referenceImage = searchParams.get('ref');
   const [isRefVisible, setIsRefVisible] = useState(true);
+  
   const dragRef = useRef<HTMLDivElement>(null);
   const [refPosition, setRefPosition] = useState({ x: -999, y: 20 });
   const isDraggingRef = useRef(false); 
   const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const [resetTrigger, setResetTrigger] = useState(0);
 
   useEffect(() => {
+    setRefPosition({ x: window.innerWidth - 280, y: 80 });
+    
     let storedId = localStorage.getItem('opera_user_id');
     if (!storedId) {
       storedId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
       localStorage.setItem('opera_user_id', storedId);
     }
     setUserId(storedId);
-    setRefPosition({ x: window.innerWidth - 280, y: 80 });
   }, []);
+
+  // [修复] 这里的依赖改成了空数组 []，因为 MODELS 现在是外部常量
+  useEffect(() => {
+    const savedModelPath = localStorage.getItem('opera_last_model_path');
+    if (savedModelPath && MODELS.some(m => m.path === savedModelPath)) {
+      setCurrentModel(savedModelPath);
+    }
+  }, []);
+
+  const handleModelChange = (path: string) => {
+    setCurrentModel(path);
+    localStorage.setItem('opera_last_model_path', path);
+  };
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDraggingRef.current) return;
-      setRefPosition({ x: e.clientX - dragOffsetRef.current.x, y: e.clientY - dragOffsetRef.current.y });
+      setRefPosition({
+        x: e.clientX - dragOffsetRef.current.x,
+        y: e.clientY - dragOffsetRef.current.y
+      });
     };
-    const handleMouseUp = () => { isDraggingRef.current = false; };
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false;
+    };
+
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
@@ -95,7 +133,6 @@ export default function EditorPage() {
 
   const handleUndo = () => { if (canUndo) setUndoTrigger(prev => prev + 1); };
   
-  // [新增] 重置画布
   const handleReset = () => {
     if (confirm('确定要清空当前画作吗？操作不可恢复。')) {
       setResetTrigger(prev => prev + 1);
@@ -111,10 +148,10 @@ export default function EditorPage() {
       const response = await fetch('/api/save-work', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: '未命名脸谱', imageUrl: data, userId: userId }),
+        body: JSON.stringify({ title: '创作脸谱', imageUrl: data, userId: userId }),
       });
       if (response.ok) {
-        if (confirm('🎉 保存成功！要去看看你的作品集吗？')) {
+        if (confirm('保存成功！要去看看你的作品集吗？')) {
              window.location.href = '/my-works';
         }
       } 
@@ -124,7 +161,9 @@ export default function EditorPage() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === 'r') setIsPainting(true);
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && canUndo) setUndoTrigger(prev => prev + 1);
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && canUndo) {
+        setUndoTrigger(prev => prev + 1);
+      }
     };
     const handleKeyUp = (e: KeyboardEvent) => { if (e.key.toLowerCase() === 'r') setIsPainting(false); };
     window.addEventListener('keydown', handleKeyDown);
@@ -147,15 +186,13 @@ export default function EditorPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-hide">
-          
-          {/* [修改] 模型选择区 */}
           <div className="mb-8">
             <p className="text-xs text-[#bfae58] uppercase tracking-widest font-bold mb-3">Base Model</p>
             <div className="grid grid-cols-2 gap-2">
               {MODELS.map((m) => (
                 <button
                   key={m.name}
-                  onClick={() => setCurrentModel(m.path)}
+                  onClick={() => handleModelChange(m.path)}
                   className={`py-2 px-3 text-xs border rounded transition-all ${
                     currentModel === m.path
                       ? 'border-[#c23531] text-[#c23531] bg-[#c23531]/10'
@@ -168,7 +205,6 @@ export default function EditorPage() {
             </div>
           </div>
           
-          {/* 颜色选择 */}
           <div>
             <div className="flex justify-between items-end mb-4"><p className="text-xs text-[#bfae58] uppercase tracking-widest font-bold">Palette</p><div className="flex space-x-4 text-xs"><button onClick={() => setSelectedCategory('main')} className={`transition-colors pb-1 border-b ${selectedCategory === 'main' ? 'text-white border-[#c23531]' : 'text-gray-600 border-transparent hover:text-gray-400'}`}>主色</button><button onClick={() => setSelectedCategory('secondary')} className={`transition-colors pb-1 border-b ${selectedCategory === 'secondary' ? 'text-white border-[#c23531]' : 'text-gray-600 border-transparent hover:text-gray-400'}`}>辅助</button></div></div>
             <div className="grid grid-cols-4 gap-3">
@@ -181,42 +217,22 @@ export default function EditorPage() {
             </div>
           </div>
 
-          {/* 画笔 & 橡皮 */}
           <div><div className="flex justify-between items-center mb-3"><p className="text-xs text-[#bfae58] uppercase tracking-widest font-bold">Brush Size</p><span className="text-xs text-gray-500 font-mono">{(brushSize * 100).toFixed(0)}</span></div><div className="relative h-8 flex items-center"><input type="range" min="0.1" max="0.5" step="0.01" value={brushSize} onChange={(e) => setBrushSize(parseFloat(e.target.value))} className="w-full h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-[#c23531] hover:accent-[#ff461f]"/></div></div>
           
-          {/* 工具栏：橡皮、撤回、重置 */}
           <div className="grid grid-cols-3 gap-2">
-             <button onClick={() => setIsEraser(!isEraser)} className={`py-2 rounded border transition-all flex flex-col items-center justify-center gap-1 ${isEraser ? 'border-[#bfae58] text-[#bfae58] bg-[#bfae58]/10' : 'border-white/10 text-gray-400 hover:border-white/30 hover:text-white'}`} title="橡皮擦">
-              <span className="text-lg">🧽</span>橡皮擦
-            </button>
-            <button onClick={handleUndo} disabled={!canUndo} className={`py-2 rounded border transition-all flex flex-col items-center justify-center gap-1 ${canUndo ? 'border-white/30 text-white hover:bg-white/5' : 'border-white/5 text-gray-700 cursor-not-allowed'}`} title="撤回">
-              <span className="text-lg">↩️</span>撤回
-            </button>
-            {/* [新增] 重置按钮 */}
-            <button onClick={handleReset} className="py-2 rounded border border-white/10 text-red-400 hover:text-red-500 hover:border-red-500/30 transition-all flex flex-col items-center justify-center gap-1" title="重置/清空">
-              <span className="text-lg">🗑️</span>重置
-            </button>
+             <button onClick={() => setIsEraser(!isEraser)} className={`py-2 rounded border transition-all flex flex-col items-center justify-center gap-1 ${isEraser ? 'border-[#bfae58] text-[#bfae58] bg-[#bfae58]/10' : 'border-white/10 text-gray-400 hover:border-white/30 hover:text-white'}`} title="橡皮擦"><span className="text-lg">🧽</span></button>
+            <button onClick={handleUndo} disabled={!canUndo} className={`py-2 rounded border transition-all flex flex-col items-center justify-center gap-1 ${canUndo ? 'border-white/30 text-white hover:bg-white/5' : 'border-white/5 text-gray-700 cursor-not-allowed'}`} title="撤回"><span className="text-lg">↩️</span></button>
+            <button onClick={handleReset} className="py-2 rounded border border-white/10 text-red-400 hover:text-red-500 hover:border-red-500/30 transition-all flex flex-col items-center justify-center gap-1" title="重置/清空"><span className="text-lg">🗑️</span></button>
           </div>
         </div>
 
         {/* 底部保存区 */}
         <div className="bg-[#0c0c0c]">
            <div className="p-6 border-t border-white/10 space-y-3">
-             <Link href="/gallery" className="flex items-center justify-center gap-2 text-xs text-[#bfae58] hover:text-white transition-colors border border-[#bfae58]/30 hover:border-[#bfae58] py-2 rounded dashed">
-                  寻找模板
-             </Link>
-
-             <button onClick={handleExportModel} className="w-full py-3 border border-[#bfae58]/50 text-[#bfae58] hover:bg-[#bfae58] hover:text-black transition-all text-xs tracking-widest uppercase font-bold flex items-center justify-center gap-2">
-                  下载 3D 模型
-             </button>
-
-             <button onClick={handleSaveClick} disabled={isSaving} className={`w-full py-4 relative overflow-hidden group border ${isSaving ? 'border-gray-700 text-gray-500' : 'border-[#c23531] text-white'}`}>
-              {!isSaving && <div className="absolute inset-0 bg-[#c23531] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>}
-              <span className="relative z-10 flex items-center justify-center gap-2 font-serif tracking-[0.2em] font-bold">{isSaving ? 'SAVING...' : '保存作品 SAVE'}</span>
-            </button>
-            <div className="mt-4 text-[10px] text-gray-600 text-center space-y-1 font-mono">
-               <p>[R] Hold to Paint &nbsp;&nbsp; [Ctrl+Z] Undo</p>
-            </div>
+             <Link href="/gallery" className="flex items-center justify-center gap-2 text-xs text-[#bfae58] hover:text-white transition-colors border border-[#bfae58]/30 hover:border-[#bfae58] py-2 rounded dashed"><span>🔍</span> 去图库找灵感</Link>
+             <button onClick={handleExportModel} className="w-full py-3 border border-[#bfae58]/50 text-[#bfae58] hover:bg-[#bfae58] hover:text-black transition-all text-xs tracking-widest uppercase font-bold flex items-center justify-center gap-2"><span>📦</span> 下载 3D 模型</button>
+             <button onClick={handleSaveClick} disabled={isSaving} className={`w-full py-4 relative overflow-hidden group border ${isSaving ? 'border-gray-700 text-gray-500' : 'border-[#c23531] text-white'}`}>{!isSaving && <div className="absolute inset-0 bg-[#c23531] translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>}<span className="relative z-10 flex items-center justify-center gap-2 font-serif tracking-[0.2em] font-bold">{isSaving ? 'SAVING...' : '保存作品 SAVE'}</span></button>
+             <div className="mt-4 text-[10px] text-gray-600 text-center space-y-1 font-mono"><p>[R] Hold to Paint &nbsp;&nbsp; [Ctrl+Z] Undo</p></div>
            </div>
         </div>
       </div>
@@ -225,22 +241,13 @@ export default function EditorPage() {
       <div className={`flex-1 relative ${isPainting ? 'cursor-crosshair' : 'cursor-grab'} bg-[radial-gradient(circle_at_center,_#2a2a2a_0%,_#050505_100%)]`}>
         <Scene isPainting={isPainting || isEraser}>
           <Mask 
-            currentColor={color} 
-            isPainting={isPainting} 
-            brushSize={brushSize} 
-            isEraser={isEraser}
-            undoTrigger={undoTrigger}
-            onHistoryChange={handleHistoryChange}
-            saveTrigger={saveTrigger}
-            onSaveData={handleSaveData}
-            exportModelTrigger={exportTrigger}
-            // [关键] 传入新参数
-            modelPath={currentModel} 
-            resetTrigger={resetTrigger}
+            currentColor={color} isPainting={isPainting} brushSize={brushSize} isEraser={isEraser}
+            undoTrigger={undoTrigger} onHistoryChange={handleHistoryChange}
+            saveTrigger={saveTrigger} onSaveData={handleSaveData}
+            exportModelTrigger={exportTrigger} modelPath={currentModel} resetTrigger={resetTrigger}
           />
         </Scene>
 
-        {/* 顶部状态浮窗 */}
         {(isPainting || isEraser) && (
            <div className={`absolute top-6 left-1/2 -translate-x-1/2 px-6 py-2 rounded-full text-xs font-bold tracking-widest shadow-2xl backdrop-blur-md border border-white/10 transition-colors duration-300 flex items-center gap-2 ${isEraser ? 'bg-[#bfae58]/20 text-[#bfae58]' : 'bg-[#c23531]/20 text-[#c23531]'}`}>
              <span className={`w-2 h-2 rounded-full animate-pulse ${isEraser ? 'bg-[#bfae58]' : 'bg-[#c23531]'}`}></span>
@@ -248,7 +255,6 @@ export default function EditorPage() {
            </div>
         )}
 
-        {/* 参考图悬浮窗 (保持不变) */}
         {referenceImage && (
           <div ref={dragRef} style={{ left: refPosition.x, top: refPosition.y, visibility: refPosition.x < 0 ? 'hidden' : 'visible' }} className="fixed z-50 w-64 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl overflow-hidden flex flex-col transition-shadow duration-200">
             <div onMouseDown={startDrag} className="bg-black/50 p-2 cursor-move flex items-center justify-between select-none border-b border-white/5 active:bg-[#c23531]/20 transition-colors"><div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#c23531]"></span><span className="text-[10px] text-gray-400 uppercase tracking-widest font-mono">Reference</span></div><button onClick={(e) => { e.stopPropagation(); setIsRefVisible(!isRefVisible); }} className="text-gray-500 hover:text-white transition-colors px-2">{isRefVisible ? '−' : '＋'}</button></div>
@@ -264,4 +270,11 @@ export default function EditorPage() {
     </div>
   );
 }
-export const dynamic = 'force-dynamic';
+
+export default function EditorPage() {
+  return (
+    <Suspense fallback={<div className="w-full h-screen flex items-center justify-center bg-[#0c0c0c] text-[#bfae58] font-mono">LOADING WORKSHOP...</div>}>
+      <EditorContent />
+    </Suspense>
+  );
+}
