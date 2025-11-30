@@ -30,5 +30,5 @@ model Exhibit {
   category    String
   description String?
   createdAt   DateTime @default(now())
-  // 这里不需要 userId，因为都是官方的
+
 }
